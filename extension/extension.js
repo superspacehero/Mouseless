@@ -1,3 +1,10 @@
+// ========================================================================
+// This file implements the main extension logic for the Mouseless GNOME Shell extension.
+// It defines the Mouseless class which handles enabling/disabling the extension,
+// creating the panel indicator, and managing the fullscreen interface.
+// It also provides the init() function to initialize the extension instance.
+// ========================================================================
+
 /* extension.js */
 /* exported init */
 const { Meta, Shell } = imports.gi;
@@ -5,47 +12,44 @@ const ExtensionUtils = imports.misc.extensionUtils;
 const Me = ExtensionUtils.getCurrentExtension();
 
 const Settings = Me.imports.settings;
-const TenFootIndicator = Me.imports.indicator;
-const TenFootScreen = Me.imports.screen;
+const MouselessIndicator = Me.imports.indicator;  // renamed indicator module if necessary
+const MouselessScreen = Me.imports.screen;          // renamed screen module if necessary
 const Main = imports.ui.main;
 
 // global constants
-window.SCHEMA_KEY = 'org.gnome.shell.extensions.tenfootgnome';
-window.HELP_URL = 'https://dudewheresmycode.github.io/TenFootGnome/';
+window.SCHEMA_KEY = 'org.gnome.shell.extensions.mouseless';
+window.HELP_URL = 'https://github.com/superspacehero/Mouseless/';
 
 const DISABLE_ANIMATIONS = true;
 
 var restoreShouldAnimate;
 
-class TenFoot {
+/**
+ * Creates the main instance managing the Mouseless extension.
+ */
+class Mouseless {
+  /**
+   * Constructor.
+   */
   constructor() {}
 
+  /**
+   * Enables the extension: creates indicators, sets keybindings, and disables animations if needed.
+   */
   enable() {
     log(`${Me.metadata.name} enabling`);
     // Create a panel indicator
     let indicatorName = `${Me.metadata.name} Indicator`;
-    this._indicator = new TenFootIndicator.TenFootIndicator(indicatorName);
+    this._indicator = new MouselessIndicator.MouselessIndicator(indicatorName);
     Main.panel.addToStatusArea(indicatorName, this._indicator);
 
     // Create the fullscreen 10-foot interface
-    this.screen = new TenFootScreen.TenFootScreen();
+    this.screen = new MouselessScreen.MouselessScreen();
 
     this.settings = ExtensionUtils.getSettings(SCHEMA_KEY);
 
-    // if (
-    //   !Main.wm.addKeybinding(
-    //     'home-static',
-    //     new Gio.Settings({ schema_id: MEDIA_KEYS_SCHEMA }),
-    //     Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
-    //     Shell.ActionMode.NORMAL,
-    //     this._exitKeyHandler.bind(this)
-    //   )
-    // ) {
-    //   log('Could not bind to home key!');
-    // }
-
     Main.wm.addKeybinding(
-      'tf-exit-shortcut',
+      'ml-exit-shortcut',
       Settings.SETTINGS,
       Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
       Shell.ActionMode.ALL,
@@ -53,7 +57,7 @@ class TenFoot {
     );
 
     Main.wm.addKeybinding(
-      'tf-home-shortcut',
+      'ml-home-shortcut',
       Settings.SETTINGS,
       Meta.KeyBindingFlags.IGNORE_AUTOREPEAT,
       Shell.ActionMode.ALL,
@@ -68,15 +72,24 @@ class TenFoot {
     }
   }
 
+  /**
+   * Handles the exit key binding to hide the interface.
+   */
   _exitKeyHandler() {
     this.hide();
   }
 
+  /**
+   * Handles the home key binding.
+   */
   _homeKeyHandler() {
-    // TODO: exit all running apps?
+    // For now, simply log the key press.
     log('_homeKeyHandler');
   }
 
+  /**
+   * Disables the extension and restores any modified settings.
+   */
   disable() {
     log(`${Me.metadata.name} disabling`);
     this.screen.hideModal();
@@ -89,10 +102,20 @@ class TenFoot {
     }
   }
 
+  /**
+   * Shows the fullscreen interface.
+   */
   show() {
+    if (!this.screen) {
+      this.screen = new MouselessScreen.MouselessScreen();
+    }
     this.screen.showModal();
   }
 
+  /**
+   * Hides the fullscreen interface.
+   * @param {boolean} closeModal - If true, hides the modal screen completely.
+   */
   hide(closeModal = true) {
     if (closeModal) {
       this.screen.hideModal();
@@ -102,7 +125,23 @@ class TenFoot {
   }
 }
 
+/**
+ * Initializes the Mouseless extension.
+ * @returns {Mouseless} An initialized instance.
+ */
 function init() {
   log(`${Me.metadata.name} init`);
-  return new TenFoot();
+  // Ensure a shared state object exists
+  if (!Me.stateObj)
+    Me.stateObj = {};
+  // Create a single instance of AppBackend if not already created.
+  if (!Me.stateObj.appBackend) {
+    try {
+      const AppBackend = Me.imports.appBackend.AppBackend;
+      Me.stateObj.appBackend = new AppBackend();
+    } catch (e) {
+      log(`Error creating AppBackend: ${e}`);
+    }
+  }
+  return new Mouseless();
 }

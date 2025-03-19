@@ -1,6 +1,6 @@
-# TenFootGnome
+# Mouseless
 
-TenFootGnome is a [gnome extension](https://extensions.gnome.org/) that displays a [10-foot](https://en.wikipedia.org/wiki/10-foot_user_interface) interface. It makes it easy to browse and launch apps with your keyboard or multi-media remote.
+Mouseless is a [GNOME extension](https://extensions.gnome.org/) that displays a [10-foot](https://en.wikipedia.org/wiki/10-foot_user_interface) interface. It makes it easy to browse and launch apps with your keyboard or multi-media remote.
 
 ---
 
@@ -17,8 +17,6 @@ Coming soon to https://extensions.gnome.org, for now you'll have to install via 
 After the extension is installed, you'll notice a new panel menu at the top of the screen.
 
 - `Help` - Clicking this will open the project's help page.
-
-- `Show on Startup` - Toggling this will launch into the 10-foot interface upon startup.
 
 - `Open Interface` - This will launch into the 10-foot interface.
 

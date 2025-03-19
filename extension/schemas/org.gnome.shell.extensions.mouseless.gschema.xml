@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist gettext-domain="gnome-shell-extensions">
+  <schema id="org.gnome.shell.extensions.mouseless" path="/org/gnome/shell/extensions/mouseless/">
+    <key type="as" name="ml-exit-shortcut">
+      <default><![CDATA[['<Control><Shift>T']]]></default>
+    </key>
+    <key type="as" name="ml-home-shortcut">
+      <default><![CDATA[['HomePage']]]></default>
+    </key>
+  </schema>
+</schemalist>

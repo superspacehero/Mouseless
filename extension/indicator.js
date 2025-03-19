@@ -1,4 +1,10 @@
-/* exported TenFootIndicator */
+// ========================================================================
+// This file implements the panel indicator for the Mouseless GNOME Shell extension.
+// It defines the MouselessIndicator class, which creates the panel button and handles
+// user interaction and UI updates for the extension's indicator.
+// ========================================================================
+
+/* exported MouselessIndicator */
 const { Gio, GObject, St } = imports.gi;
 
 const ExtensionUtils = imports.misc.extensionUtils;
@@ -7,8 +13,15 @@ const PopupMenu = imports.ui.popupMenu;
 const PanelMenu = imports.ui.panelMenu;
 const Util = imports.misc.util;
 
-var TenFootIndicator = GObject.registerClass(
-  class TenFootIndicator extends PanelMenu.Button {
+var MouselessIndicator = GObject.registerClass(
+  /**
+   * Creates a panel indicator for the Mouseless extension.
+   */
+  class MouselessIndicator extends PanelMenu.Button {
+    /**
+     * Initializes the indicator.
+     * @param {string} name - The name of the indicator.
+     */
     _init(name) {
       super._init(0.5, _(name));
 
@@ -25,7 +38,7 @@ var TenFootIndicator = GObject.registerClass(
 
       this.add_child(this._hbox);
 
-      const infoItem = new PopupMenu.PopupMenuItem('TenFootGnome v0.1', { hover: false, reactive: false });
+      const infoItem = new PopupMenu.PopupMenuItem('Mouseless v0.1', { hover: false, reactive: false });
       this.menu.addMenuItem(infoItem);
 
       const helpItem = new PopupMenu.PopupMenuItem('Help');
@@ -37,41 +50,23 @@ var TenFootIndicator = GObject.registerClass(
 
       this.settings = ExtensionUtils.getSettings(SCHEMA_KEY);
 
-      this.startupOption = new PopupMenu.PopupSwitchMenuItem(
-        'Show on Startup',
-        this.settings.get_boolean('show-on-startup')
-      );
-      this.startupOption.connect('toggled', this._toggleStartup.bind(this));
-      this.menu.addMenuItem(this.startupOption);
-
-      // this.startupOption
-      // this._startupToggle = this.settings.get_boolean ('show-on-startup');
-      // Bind the switch to the `show-indicator` key
-      // this.settings.bind(
-      //   'show-on-startup',
-      //   this._startupToggle,
-      //   'active',
-      //   Gio.SettingsBindFlags.DEFAULT
-      // );
-      // const settingsItem = new PopupMenu.PopupMenuItem('Settings');
-      // this.menu.addMenuItem(settingsItem);
-
       const openItem = new PopupMenu.PopupMenuItem('Open Interface');
       this.menu.addMenuItem(openItem);
       openItem.connect('activate', this._openInterface.bind(this));
     }
 
+    /**
+     * Opens the help documentation.
+     */
     _openHelp() {
       Util.spawn(['xdg-open', HELP_URL]);
     }
 
+    /**
+     * Opens the main interface.
+     */
     _openInterface() {
       Me.stateObj.show();
-    }
-
-    _toggleStartup(actor, value) {
-      log(`_toggleStartup: ${value}`);
-      this.settings.set_boolean('show-on-startup', value);
     }
   }
 );

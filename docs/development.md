@@ -7,8 +7,8 @@ PRs and contributions are welcome! Here's a rough guide on getting started.
 Clone this repo
 
 ```bash
-git clone https://github.com/dudewheresmycode/TenFootGnome.git
-cd TenFootGnome
+git clone https://github.com/superspacehero/Mouseless.git
+cd Mouseless
 ```
 
 Compile the schemas. The schemas outline key value pairs for storing extension preferences. You'll need to do this anytime you make changes to the raw schema xml.
@@ -23,7 +23,7 @@ You can create a link to the `extension` folder of this project in the `~/.local
 # make sure the extensions directory exists
 mkdir -p ~/.local/share/gnome-shell/extensions
 # add a symlink
-ln ./extension ~/.local/share/gnome-shell/extensions/tenfootgnome@dudewheresmycode.github.io
+ln ./extension ~/.local/share/gnome-shell/extensions/mouseless@asherpinson.com
 ```
 
 Restart gnome-shell by pressing `Alt` + `F2` and then type `restart` and press enter
@@ -31,7 +31,7 @@ Restart gnome-shell by pressing `Alt` + `F2` and then type `restart` and press e
 Enable the extension:
 
 ```bash
-gnome-extensions enable tenfootgnome@dudewheresmycode.github.io
+gnome-extensions enable mouseless@asherpinson.com
 ```
 
 ### Useful Commands

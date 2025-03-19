@@ -1,8 +1,8 @@
 {
-  "name": "TenFootGnome",
+  "name": "Mouseless",
   "description": "A ten-foot interface for HTPCs",
-  "url": "https://github.com/dudewheresmycode/TenFootGnome",
-  "uuid": "tenfootgnome@dudewheresmycode.github.io",
+  "url": "https://github.com/superspacehero/Mouseless",
+  "uuid": "mouseless@asherpinson.com",
   "shell-version": ["3.36"],
-  "settings-schema": "org.gnome.shell.extensions.tenfootgnome"
+  "settings-schema": "org.gnome.shell.extensions.mouseless"
 }

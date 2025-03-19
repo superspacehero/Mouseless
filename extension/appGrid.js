@@ -1,4 +1,8 @@
-/* exported AppView, AppGrid */
+// ========================================================================
+// This file implements the core UI components for displaying application icons in a grid.
+// It defines BaseAppIcon, AppIcon, AppView, and AppGrid which wraps AppView in a resizing container.
+// ========================================================================
+
 const { Clutter, GLib, Gio, GObject, Graphene, Meta, Shell, St } = imports.gi;
 
 const ExtensionUtils = imports.misc.extensionUtils;
@@ -9,6 +13,7 @@ const AppFavorites = imports.ui.appFavorites;
 const Main = imports.ui.main;
 const Params = imports.misc.params;
 const Util = imports.misc.util;
+const PopupMenu = imports.ui.popupMenu;
 
 var MAX_COLUMNS = 5;
 var MIN_COLUMNS = 3;
@@ -21,21 +26,34 @@ var BaseAppIcon = GObject.registerClass(
       'sync-tooltip': {}
     }
   },
+  /**
+   * BaseAppIcon represents a basic application icon that supports animations.
+   * @param {Object} app - The application object.
+   * @param {string} name - The display name.
+   * @param {string} id - The application id.
+   */
   class BaseAppIcon extends St.Button {
+    /**
+     * Initializes a new BaseAppIcon.
+     * @param {Object} app - The application object.
+     * @param {string} name - The display name of the app.
+     * @param {string} id - The unique identifier for the app.
+     */
     _init(app, name, id) {
       super._init({
         style_class: 'app-well-app',
         pivot_point: new Graphene.Point({ x: 0.5, y: 0.5 }),
-        reactive: false,
+        reactive: true,
         button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO,
         can_focus: true
       });
 
+      // Ensure name and id are strings
       this.app = app;
-      this.name = name;
-      this.id = id;
+      this.name = String(name);
+      this.id = String(id);
       if (app.icon) {
-        this.iconName = app.icon;
+        this.iconName = String(app.icon);
       }
 
       this._iconContainer = new St.Widget({ layout_manager: new Clutter.BinLayout(), x_expand: true, y_expand: true });
@@ -43,24 +61,34 @@ var BaseAppIcon = GObject.registerClass(
 
       this._delegate = this;
 
-      const iconParams = {};
-      iconParams['createIcon'] = this._createIcon.bind(this);
-      iconParams['setSizeManually'] = true;
+      const iconParams = {
+        createIcon: this._createIcon.bind(this),
+        setSizeManually: true
+      };
 
-      this.icon = new IconGrid.BaseIcon(this.name, iconParams);
+      // Explicitly convert this.name to string before passing it
+      this.icon = new IconGrid.BaseIcon(String(this.name), iconParams);
 
       this._iconContainer.add_child(this.icon);
       this.label_actor = this.icon.label;
-      this.label_actor.style_class = 'tf-grid-icon-label';
+      this.label_actor.style_class = 'ml-grid-icon-label';
 
       this.icon.setIconSize(250);
       this.icon.update();
     }
 
+    /**
+     * Handles click events on the icon.
+     * @override
+     */
     vfunc_clicked(button) {
       this.activate(button);
     }
 
+    /**
+     * Activates the associated window.
+     * @param {Meta.Window} metaWindow - The window to activate.
+     */
     activateWindow(metaWindow) {
       if (metaWindow) {
         Main.activateWindow(metaWindow);
@@ -71,6 +99,9 @@ var BaseAppIcon = GObject.registerClass(
       return this.id;
     }
 
+    /**
+     * Scales and fades the icon.
+     */
     scaleAndFade() {
       this.ease({
         scale_x: 0.75,
@@ -79,6 +110,9 @@ var BaseAppIcon = GObject.registerClass(
       });
     }
 
+    /**
+     * Restores the icon scale and opacity.
+     */
     undoScaleAndFade() {
       this.ease({
         scale_x: 1.0,
@@ -87,89 +121,185 @@ var BaseAppIcon = GObject.registerClass(
       });
     }
 
+    /**
+     * Animates the app icon launch effect.
+     */
     animateLaunch() {
       this.icon.animateZoomOut();
     }
 
+    /**
+     * Animates a zoom out effect from a specific position.
+     * @param {number} x - The x-coordinate.
+     * @param {number} y - The y-coordinate.
+     */
     animateLaunchAtPos(x, y) {
       this.icon.animateZoomOutAtPos(x, y);
     }
 
+    /**
+     * Stub to be implemented by subclasses for app activation.
+     */
     activate() {
       // implement in the extended class
     }
 
+    /**
+     * Stub to be implemented by subclasses for icon creation.
+     */
     _createIcon() {
       // implement in the extended class
     }
   }
 );
 
-var FauxAppIcon = GObject.registerClass(
-  class FauxAppIcon extends BaseAppIcon {
-    _init(app) {
-      super._init(app, app.name, app.id);
-    }
-
-    activate() {
-      switch (this.id) {
-        case 'settings':
-          Me.stateObj.screen.showSettings();
-          break;
-        case 'netflix':
-          Util.spawn(['firefox', '--kiosk', 'https://netflix.com']);
-          break;
-        case 'youtube':
-          Util.spawn(['firefox', '--kiosk', 'https://youtube.com']);
-          break;
-      }
-      Me.stateObj.screen.sounds._playInterfaceClick();
-    }
-
-    _createIcon(iconSize) {
-      if (!this.iconName) {
-        // TODO: Add generic app icon
-        return;
-      }
-      let iconPath = `${Me.path}/assets/${this.iconName}.svg`;
-      let gicon = Gio.icon_new_for_string(`${iconPath}`);
-      return new St.Icon({ gicon: gicon, icon_size: iconSize });
-    }
-  }
-);
-
 var AppIcon = GObject.registerClass(
-  {
-    Signals: {
-      'menu-state-changed': { param_types: [GObject.TYPE_BOOLEAN] },
-      'sync-tooltip': {}
-    }
-  },
+  {},
+  /**
+   * AppIcon extends BaseAppIcon with app-specific functionality.
+   * @param {Object} app - The application object.
+   */
   class AppIcon extends BaseAppIcon {
+    /**
+     * Initializes a new AppIcon using the provided app data.
+     * @param {Object} app - The application object.
+     */
     _init(app) {
-      super._init(app, app.get_name(), app.get_id());
+      let name = app.get_name ? String(app.get_name()) : String(app.name);
+      let id = app.get_id ? String(app.get_id()) : String(app.id);
+      super._init(app, name, id);
     }
 
-    activate(button) {
+    /**
+     * Handles pointer enter events to set hover state and focus.
+     * @override
+     */
+    vfunc_enter_event(event) {
+      return Me.imports.keyEvents.KeyEvents.handlePointerEnter(this, event);
+    }
+
+    /**
+     * Handles pointer leave events to remove hover state.
+     * @override
+     */
+    vfunc_leave_event(event) {
+      return Me.imports.keyEvents.KeyEvents.handlePointerLeave(this, event);
+    }
+
+    /**
+     * Detects quick taps to activate the icon.
+     * @override
+     */
+    vfunc_clicked(event) {
+      if (this._longPressTimeout) {
+        GLib.source_remove(this._longPressTimeout);
+        this._longPressTimeout = null;
+      }
+      return Me.imports.keyEvents.KeyEvents.handlePointerClick(this, event);
+    }
+
+    /**
+     * Activates the application based on the event details such as modifiers.
+     */
+    activate(buttonOrEvent) {
       let event = Clutter.get_current_event();
       let modifiers = event ? event.get_state() : 0;
-      let isMiddleButton = button && button == Clutter.BUTTON_MIDDLE;
-      let isCtrlPressed = (modifiers & Clutter.ModifierType.CONTROL_MASK) != 0;
+      let isMiddleButton = buttonOrEvent && (buttonOrEvent === Clutter.BUTTON_MIDDLE);
+      let isCtrlPressed = (modifiers & Clutter.ModifierType.CONTROL_MASK) !== 0;
       let openNewWindow =
-        this.app.can_open_new_window() && this.app.state == Shell.AppState.RUNNING && (isCtrlPressed || isMiddleButton);
+        this.app.can_open_new_window() &&
+        this.app.state === Shell.AppState.RUNNING &&
+        (isCtrlPressed || isMiddleButton);
 
-      if (this.app.state == Shell.AppState.STOPPED || openNewWindow) this.animateLaunch();
-
+      if (this.app.state === Shell.AppState.STOPPED || openNewWindow) {
+        this.animateLaunch();
+      }
       if (openNewWindow) {
         this.app.open_new_window(-1);
       } else {
         this.app.activate();
       }
       Me.stateObj.screen.sounds._playInterfaceClick();
+      Me.stateObj.screen.hideModal(true);
     }
 
+    /**
+     * Creates the icon widget for the app.
+     * @param {number} iconSize - The size of the icon.
+     * @returns {St.Widget} - The icon widget.
+     */
     _createIcon(iconSize) {
-      return this.app.create_icon_texture(iconSize);
+      if (typeof this.app.create_icon_texture === 'function') {
+        return this.app.create_icon_texture(iconSize);
+      } else {
+        let gicon = this.app.get_icon && this.app.get_icon();
+        return new St.Icon({ gicon: gicon, icon_size: iconSize });
+      }
+    }
+
+    /**
+     * Displays the context menu for the app icon.
+     */
+    popupMenu() {
+      if (!this._menu) {
+        this._menu = new PopupMenu.PopupMenu(this, 0.5, St.Side.TOP, 0);
+        let openItem = new PopupMenu.PopupMenuItem("Open App");
+        openItem.connect('activate', () => {
+          this.app.activate();
+          this._menu.close();
+          Me.stateObj.screen.hideModal(true);
+        });
+        this._menu.addMenuItem(openItem);
+        let newWindowItem = new PopupMenu.PopupMenuItem("Open in New Window");
+        newWindowItem.connect('activate', () => {
+          this.app.open_new_window(-1);
+          this._menu.close();
+          Me.stateObj.screen.hideModal(true);
+        });
+        this._menu.addMenuItem(newWindowItem);
+        let cancelItem = new PopupMenu.PopupMenuItem("Cancel");
+        cancelItem.connect('activate', () => {
+          this._menu.close();
+        });
+        this._menu.addMenuItem(cancelItem);
+      }
+      this._menu.open();
+    }
+
+    /**
+     * Detects button press events for long-press or right-click context menu activation.
+     * @override
+     */
+    vfunc_button_press_event(event) {
+      let button = event.get_button();
+      if (button === Clutter.BUTTON_PRIMARY) {
+        this._longPressTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 800, () => {
+          this.popupMenu();
+          this._longPressTimeout = null;
+          return GLib.SOURCE_REMOVE;
+        });
+      } else if (button === Clutter.BUTTON_SECONDARY) {
+        // Immediately trigger the popup menu on right-click.
+        this.popupMenu();
+        return Clutter.EVENT_STOP;
+      }
+      return Clutter.EVENT_PROPAGATE;
+    }
+
+    /**
+     * Handles button release events and cancels long-press if necessary.
+     * @override
+     */
+    vfunc_button_release_event(event) {
+      let button = event.get_button();
+      if (this._longPressTimeout) {
+        GLib.source_remove(this._longPressTimeout);
+        this._longPressTimeout = null;
+      }
+      // For right-click, we already handled activation in the press event.
+      if (button === Clutter.BUTTON_SECONDARY)
+        return Clutter.EVENT_STOP;
+      return super.vfunc_button_release_event(event);
     }
   }
 );
@@ -180,7 +310,15 @@ var AppView = GObject.registerClass(
       'view-loaded': {}
     }
   },
+  /**
+   * AppView manages the grid of application icons.
+   */
   class AppView extends St.Widget {
+    /**
+     * Initializes the AppView with a grid layout and scroll view.
+     * @param {Object} params - Widget parameters.
+     * @param {Object} gridParams - Parameters for grid layout.
+     */
     _init(params = {}, gridParams = {}) {
       super._init(
         Params.parse(params, {
@@ -201,13 +339,13 @@ var AppView = GObject.registerClass(
         true
       );
 
-      // QUESTION: Should we use the PaginatedIconGrid here?
+      // Set up the grid view
       this._grid = new IconGrid.IconGrid(gridParams);
 
       this._grid.connect('child-focused', (grid, actor) => {
         this._childFocused(actor);
       });
-      this._grid.connect('key-press-event', this._onKeyPress.bind(this));
+      this._grid.connect('key-press-event', this.movement.bind(this));
 
       // Standard hack for ClutterBinLayout
       this._grid.x_expand = true;
@@ -239,12 +377,6 @@ var AppView = GObject.registerClass(
       this._availWidth = 0;
       this._availHeight = 0;
 
-      this.fauxApps = [
-        new FauxAppIcon({ id: 'youtube', name: 'YouTube', icon: 'youtube' }),
-        new FauxAppIcon({ id: 'netflix', name: 'Netflix', icon: 'netflix' }),
-        new FauxAppIcon({ id: 'settings', name: 'Settings', icon: 'settings' })
-      ];
-
       // defer redisplay
       this._redisplayWorkId = Main.initializeDeferredWork(this, this._redisplay.bind(this));
 
@@ -254,59 +386,61 @@ var AppView = GObject.registerClass(
         this._queueRedisplay();
       });
       AppFavorites.getAppFavorites().connect('changed', this._queueRedisplay.bind(this));
-
-      // this.connect('view-loaded', () => {
-      //   // add our fake app icons to the grid
-      //   let lastIndex = this._items.size;
-      //   // TODO Add custom Settings app
-      //   const yt_app = new FauxAppIcon({ id: 'youtube', name: 'YouTube', icon: 'youtube' });
-      //   this._grid.addItem(yt_app, lastIndex);
-
-      //   lastIndex++;
-      //   const nf_app = new FauxAppIcon({ id: 'netflix', name: 'Netflix', icon: 'netflix' });
-      //   this._grid.addItem(nf_app, lastIndex);
-
-      //   lastIndex++;
-      //   const s_app = new FauxAppIcon({ id: 'settings', name: 'Settings', icon: 'settings' });
-      //   this._grid.addItem(s_app, lastIndex++);
-      // });
     }
 
+    /**
+     * Queues a redisplay of the app grid.
+     */
     _queueRedisplay() {
       Main.queueDeferredWork(this._redisplayWorkId);
     }
 
+    /**
+     * Ensures that the focused icon is visible in the scroll view.
+     * @param {St.Widget} icon - The focused icon.
+     */
     _childFocused(icon) {
       Util.ensureActorVisibleInScrollView(this._scrollView, icon);
       this._lastFocused = icon;
+      Me.stateObj.screen.sounds._playInterfaceClick();
     }
 
-    _onKeyPress(actor, event) {
-      let symbol = event.get_key_symbol();
-      let direction = null;
-      if (symbol === Clutter.KEY_Tab || symbol === Clutter.KEY_Right) {
-        direction = St.DirectionType.RIGHT;
-      } else if (symbol === Clutter.KEY_ISO_Left_Tab || symbol === Clutter.KEY_Left) {
-        direction = St.DirectionType.LEFT;
-      } else if (symbol === Clutter.KEY_Up) {
-        direction = St.DirectionType.UP;
-      } else if (symbol === Clutter.KEY_Down) {
-        direction = St.DirectionType.DOWN;
-      }
-
-      if (this._lastFocused && direction) {
-        Me.stateObj.screen.sounds._playInterfaceClick();
-        this._grid.navigate_focus(this._lastFocused, direction, false);
-        return Clutter.EVENT_STOP;
+    /**
+     * Moves the focus on the grid based on the provided movement event.
+     *
+     * This method extracts the movement direction from the given event and, if valid and
+     * there is an element that was last focused, it navigates the grid's focus accordingly.
+     * It returns Clutter.EVENT_STOP if the focus is successfully moved; otherwise, it returns
+     * Clutter.EVENT_PROPAGATE.
+     *
+     * @param {Object} actor - The actor associated with the event.
+     * @param {Object} event - The event object containing the movementDirection property.
+     * @param {string} event.movementDirection - The direction to move (e.g., St.DirectionType.RIGHT).
+     * @returns {number} - Clutter.EVENT_STOP if moved, else Clutter.EVENT_PROPAGATE.
+     */
+    movement(actor, event) {
+      let direction = event.movementDirection;
+      if (direction && this._lastFocused) {
+      this._grid.navigate_focus(this._lastFocused, direction, false);
+      return Clutter.EVENT_STOP;
       }
       return Clutter.EVENT_PROPAGATE;
     }
 
+    /**
+     * Internal method to select an app.
+     * @param {string} id - The app identifier.
+     * @private
+     */
     _selectAppInternal(id) {
       if (this._items.has(id)) this._items.get(id).navigate_focus(null, St.DirectionType.TAB_FORWARD, false);
       else log('No such application %s'.format(id));
     }
 
+    /**
+     * Selects an app by id.
+     * @param {string} id - The app id.
+     */
     selectApp(id) {
       if (this._items.has(id)) {
         let item = this._items.get(id);
@@ -334,28 +468,26 @@ var AppView = GObject.registerClass(
       return a.name.localeCompare(b.name);
     }
 
+    /**
+     * Redisplays the app grid by adding new apps and removing missing ones.
+     */
     _redisplay() {
-      // copy?
       let oldApps = this._orderedItems.slice();
       let oldAppIds = oldApps.map((icon) => icon.id);
-      // TODO: allow custom ordering?
       let newApps = this._loadApps().sort(this._compareItems);
       let newAppIds = newApps.map((icon) => icon.id);
 
       let addedApps = newApps.filter((icon) => !oldAppIds.includes(icon.id));
       let removedApps = oldApps.filter((icon) => !newAppIds.includes(icon.id));
 
-      // Remove old app icons
       removedApps.forEach((icon) => {
         let iconIndex = this._orderedItems.indexOf(icon);
         let id = icon.id;
-
         this._orderedItems.splice(iconIndex, 1);
         icon.destroy();
         this._items.delete(id);
       });
 
-      // Add new app icons
       addedApps.forEach((icon) => {
         let iconIndex = newApps.indexOf(icon);
         this._orderedItems.splice(iconIndex, 0, icon);
@@ -363,42 +495,75 @@ var AppView = GObject.registerClass(
         this._items.set(icon.id, icon);
       });
 
-      // always add faux apps to end of list
-      this.fauxApps.forEach((icon) => {
-        if (this._grid.contains(icon)) {
-          this._grid.removeItem(icon);
-        }
-        this._grid.addItem(icon);
-      });
-
       this._viewIsReady = true;
       this.emit('view-loaded');
     }
 
     _addFauxApp() {}
+    /**
+     * Loads applications and creates icons.
+     * @returns {Array} - An array of AppIcon instances.
+     */
     _loadApps() {
-      let appIcons = [];
-
-      let favorites = AppFavorites.getAppFavorites().getFavoriteMap();
-
-      let appSys = Shell.AppSystem.get_default();
-
-      for (let appId in favorites) {
-        let icon = this._items.get(appId);
-        if (!icon) {
-          let app = appSys.lookup_app(appId);
-          icon = new AppIcon(app);
+      // Lazy initialization of the AppBackend if it hasn't been created yet
+      if (!Me.stateObj.appBackend) {
+        try {
+          const AppBackend = Me.imports.appBackend.AppBackend;
+          Me.stateObj.appBackend = new AppBackend();
+        } catch (e) {
+          log("Error creating AppBackend in _loadApps: " + e);
+          return [];
         }
-        appIcons.push(icon);
       }
-      return appIcons;
+      
+      let backendApps = Me.stateObj.appBackend.getAllApps();
+      let icons = [];
+      
+      // Create an AppIcon for each app in the list.
+      for (let i = 0; i < backendApps.length; i++) {
+        let app = backendApps[i];
+        icons.push(new AppIcon(app));
+      }
+      
+      // Retrieve favorite and running app IDs.
+      let favoriteAppIds = [];
+      if (AppFavorites.getAppFavorites().getFavoriteAppIds)
+        favoriteAppIds = AppFavorites.getAppFavorites().getFavoriteAppIds();
+      favoriteAppIds = favoriteAppIds.map(id => id.toLowerCase());
+      
+      let runningApps = Shell.AppSystem.get_default().get_running();
+      let runningAppIds = runningApps.map(app => (app.get_id ? app.get_id() : app.id).toLowerCase());
+      
+      // Filter icons into groups: favorites, running (but not favorites), and others.
+      let favIcons = icons.filter(icon => favoriteAppIds.includes(icon.getId().toLowerCase()));
+      let runningIcons = icons.filter(icon => runningAppIds.includes(icon.getId().toLowerCase()) &&
+                                               !favoriteAppIds.includes(icon.getId().toLowerCase()));
+      let otherIcons = icons.filter(icon => !favoriteAppIds.includes(icon.getId().toLowerCase()) &&
+                                              !runningAppIds.includes(icon.getId().toLowerCase()));
+      
+      // Log group details to help with debugging.
+      favIcons.forEach(icon => log("Mouseless: [FAV] " + icon.getId()));
+      runningIcons.forEach(icon => log("Mouseless: [RUN] " + icon.getId()));
+      otherIcons.forEach(icon => log("Mouseless: [OTH] " + icon.getId()));
+      
+      // Sort each group alphabetically.
+      favIcons.sort((a, b) => a.name.localeCompare(b.name));
+      runningIcons.sort((a, b) => a.name.localeCompare(b.name));
+      otherIcons.sort((a, b) => a.name.localeCompare(b.name));
+      
+      // Concatenate groups in order: favorites, then running, then the rest.
+      let sortedIcons = favIcons.concat(runningIcons, otherIcons);
+      
+      return sortedIcons;
     }
 
-    // _onScroll() {
-    //   // log('_onScroll');
-    // }
-
+    /**
+     * Adapts the grid layout to the available size.
+     * @param {number} width - Available width.
+     * @param {number} height - Available height.
+     */
     adaptToSize(width, height) {
+      // Compute available dimensions for the grid.
       let box = new Clutter.ActorBox();
       box.x1 = 0;
       box.x2 = width;
@@ -409,20 +574,28 @@ var AppView = GObject.registerClass(
       box = this._grid.get_theme_node().get_content_box(box);
       let availWidth = box.x2 - box.x1;
       let availHeight = box.y2 - box.y1;
-      // let oldNPages = this._grid.nPages();
-
+      
+      // Adapt the grid layout to the available size.
       this._grid.adaptToSize(availWidth, availHeight);
-
+      
+      // Create margins for the scroll view fade effect.
       let fadeOffset = Math.min(this._grid.topPadding, this._grid.bottomPadding);
-      this._scrollView.update_fade_effect(fadeOffset, 0);
-      if (fadeOffset > 0) this._scrollView.get_effect('fade').fade_edges = true;
-
-      if (this._availWidth != availWidth || this._availHeight != availHeight /*|| oldNPages != this._grid.nPages()*/) {
+      let margins = new Clutter.Margin({
+        top: fadeOffset,
+        right: fadeOffset,
+        bottom: fadeOffset,
+        left: fadeOffset
+      });
+      this._scrollView.update_fade_effect(margins);
+      if (fadeOffset > 0)
+        this._scrollView.get_effect('fade').fade_edges = true;
+      
+      // Trigger a redraw if available dimensions have changed.
+      if (this._availWidth !== availWidth || this._availHeight !== availHeight)
         Meta.later_add(Meta.LaterType.BEFORE_REDRAW, () => {
           return GLib.SOURCE_REMOVE;
         });
-      }
-
+      
       this._availWidth = availWidth;
       this._availHeight = availHeight;
     }
@@ -430,13 +603,20 @@ var AppView = GObject.registerClass(
 );
 
 var AppGrid = GObject.registerClass(
+  /**
+   * AppGrid embeds the AppView in a container that adapts on resize.
+   */
   class AppGrid extends St.BoxLayout {
+    /**
+     * Initializes the AppGrid and embeds the AppView in a view stack.
+     * @param {Object} params - BoxLayout parameters.
+     */
     _init(params = {}) {
       super._init(
         Params.parse(
           params,
           {
-            style_class: 'tf-app-grid app-display',
+            style_class: 'ml-app-grid app-display',
             vertical: true,
             x_expand: true,
             y_expand: true
@@ -445,17 +625,27 @@ var AppGrid = GObject.registerClass(
         )
       );
       this.appView = new AppView();
-
+      
+      // Set up the view stack for containing the app view.
       this._viewStackLayout = new ViewStackLayout.ViewStackLayout();
-      this._viewStack = new St.Widget({ x_expand: true, y_expand: true, layout_manager: this._viewStackLayout });
+      this._viewStack = new St.Widget({ 
+        x_expand: true, 
+        y_expand: true, 
+        layout_manager: this._viewStackLayout 
+      });
       this._viewStackLayout.connect('allocated-size-changed', this._onAllocatedSizeChanged.bind(this));
-
       this._viewStack.add_actor(this.appView);
-
       this.add_actor(this._viewStack);
     }
 
+    /**
+     * Handles allocated size changes and informs the AppView.
+     * @param {St.Actor} actor - The actor with changed allocation.
+     * @param {number} width - The new width.
+     * @param {number} height - The new height.
+     */
     _onAllocatedSizeChanged(actor, width, height) {
+      // Calculate available size and inform the app view.
       let box = new Clutter.ActorBox();
       box.x1 = box.y1 = 0;
       box.x2 = width;

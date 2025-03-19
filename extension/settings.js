@@ -1,3 +1,7 @@
+// ========================================================================
+// This file implements the settings for the Mouseless extension.
+// It defines the getSettings function and exposes the SETTINGS global variable.
+// ========================================================================
 /* settings.js */
 /* exported getSettings, SETTINGS */
 const Gio = imports.gi.Gio;
@@ -6,12 +10,9 @@ const ExtensionUtils = imports.misc.extensionUtils;
 var SETTINGS = getSettings();
 
 /**
- * getSettings:
- * @schema: (optional): the GSettings schema id
- *
- * Builds and return a GSettings schema for @schema, using schema files
- * in extensionsdir/schemas. If @schema is not provided, it is taken from
- * metadata['settings-schema'].
+ * Builds and returns a GSettings schema for the extension.
+ * @param {string} [schema] - The GSettings schema id. If omitted, taken from metadata.
+ * @returns {Gio.Settings} The settings object.
  */
 function getSettings(schema) {
   let extension = ExtensionUtils.getCurrentExtension();

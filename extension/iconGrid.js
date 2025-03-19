@@ -1,4 +1,9 @@
 // -*- mode: js; js-indent-level: 4; indent-tabs-mode: nil -*-
+// ========================================================================
+// This file provides the icon grid components for the Mouseless GNOME Shell extension.
+// It defines BaseIcon, IconGrid, and optionally PaginatedIconGrid, as well as helper functions
+// for icon animations such as zoomOut and position animations.
+// ========================================================================
 /* exported BaseIcon, IconGrid, PaginatedIconGrid */
 
 const { Clutter, GLib, GObject, Graphene, Meta, St } = imports.gi;
@@ -28,6 +33,11 @@ var APPICON_ANIMATION_OUT_TIME = 250;
 
 const ICON_POSITION_DELAY = 25;
 
+/**
+ * BaseIcon creates an icon widget with a label and supports animations.
+ * @param {string} label - The icon label.
+ * @param {Object} params - Parameters for icon creation.
+ */
 var BaseIcon = GObject.registerClass(
   class BaseIcon extends St.Bin {
     _init(label, params) {
@@ -72,17 +82,29 @@ var BaseIcon = GObject.registerClass(
       this._iconThemeChangedId = cache.connect('icon-theme-changed', this._onIconThemeChanged.bind(this));
     }
 
+    /**
+     * Returns the preferred width.
+     * @param {number} _forHeight - Height constraint.
+     * @returns {number} Preferred width.
+     */
     vfunc_get_preferred_width(_forHeight) {
       // Return the actual height to keep the squared aspect
       return this.get_preferred_height(-1);
     }
 
-    // This can be overridden by a subclass, or by the createIcon
-    // parameter to _init()
+    /**
+     * Override to create an icon texture.
+     * @param {number} _size - The size for the icon.
+     * @throws {GObject.NotImplementedError}
+     */
     createIcon(_size) {
       throw new GObject.NotImplementedError(`createIcon in ${this.constructor.name}`);
     }
 
+    /**
+     * Sets the icon size manually.
+     * @param {number} size - The new icon size.
+     */
     setIconSize(size) {
       if (!this._setSizeManually) throw new Error('setSizeManually has to be set to use setIconsize');
 
@@ -91,6 +113,11 @@ var BaseIcon = GObject.registerClass(
       this._createIconTexture(size);
     }
 
+    /**
+     * Creates a new icon texture.
+     * @param {number} size - The icon size.
+     * @private
+     */
     _createIconTexture(size) {
       if (this.icon) this.icon.destroy();
       this.iconSize = size;
@@ -99,6 +126,9 @@ var BaseIcon = GObject.registerClass(
       this._iconBin.child = this.icon;
     }
 
+    /**
+     * Updates the icon texture when styles change.
+     */
     vfunc_style_changed() {
       super.vfunc_style_changed();
       let node = this.get_theme_node();
@@ -116,6 +146,10 @@ var BaseIcon = GObject.registerClass(
       this._createIconTexture(size);
     }
 
+    /**
+     * Cleans up event connections.
+     * @private
+     */
     _onDestroy() {
       if (this._iconThemeChangedId > 0) {
         let cache = St.TextureCache.get_default();
@@ -124,10 +158,17 @@ var BaseIcon = GObject.registerClass(
       }
     }
 
+    /**
+     * Handles icon theme changes.
+     * @private
+     */
     _onIconThemeChanged() {
       this._createIconTexture(this.iconSize);
     }
 
+    /**
+     * Animates a zoom-out effect on the icon.
+     */
     animateZoomOut() {
       // Animate only the child instead of the entire actor, so the
       // styles like hover and running are not applied while
@@ -135,25 +176,50 @@ var BaseIcon = GObject.registerClass(
       zoomOutActor(this.child);
     }
 
+    /**
+     * Animates a zoom-out effect starting at a given position.
+     * @param {number} x - X coordinate.
+     * @param {number} y - Y coordinate.
+     */
     animateZoomOutAtPos(x, y) {
       zoomOutActorAtPos(this.child, x, y);
     }
 
+    /**
+     * Updates the icon texture.
+     */
     update() {
       this._createIconTexture(this.iconSize);
     }
   }
 );
 
+/**
+ * Helper function that clamps a value.
+ * @param {number} value - The value.
+ * @param {number} min - The minimum.
+ * @param {number} max - The maximum.
+ * @returns {number} The clamped value.
+ */
 function clamp(value, min, max) {
   return Math.max(Math.min(value, max), min);
 }
 
+/**
+ * Animates the given actor with a zoom-out effect.
+ * @param {Clutter.Actor} actor - The actor.
+ */
 function zoomOutActor(actor) {
   let [x, y] = actor.get_transformed_position();
   zoomOutActorAtPos(actor, x, y);
 }
 
+/**
+ * Animates a zoom-out effect from a specific position.
+ * @param {Clutter.Actor} actor - The actor.
+ * @param {number} x - The starting x coordinate.
+ * @param {number} y - The starting y coordinate.
+ */
 function zoomOutActorAtPos(actor, x, y) {
   let actorClone = new Clutter.Clone({ source: actor, reactive: false });
   let [width, height] = actor.get_transformed_size();
@@ -186,9 +252,16 @@ function zoomOutActorAtPos(actor, x, y) {
   });
 }
 
-function animateIconPosition(icon, box, flags, nChangedIcons) {
+/**
+ * Animates the position of an icon.
+ * @param {Clutter.Actor} icon - The icon actor.
+ * @param {Clutter.ActorBox} box - The target box.
+ * @param {number} nChangedIcons - Number of changed icons.
+ * @returns {boolean} True if animation was applied.
+ */
+function animateIconPosition(icon, box, nChangedIcons) {
   if (!icon.has_allocation() || icon.allocation.equal(box) || icon.opacity === 0) {
-    icon.allocate(box, flags);
+    icon.allocate(box);
     return false;
   }
 
@@ -196,13 +269,16 @@ function animateIconPosition(icon, box, flags, nChangedIcons) {
   icon.set_easing_mode(Clutter.AnimationMode.EASE_OUT_QUAD);
   icon.set_easing_delay(nChangedIcons * ICON_POSITION_DELAY);
 
-  icon.allocate(box, flags);
+  icon.allocate(box);
 
   icon.restore_easing_state();
 
   return true;
 }
 
+/**
+ * IconGrid provides a flexible grid layout widget for application icons.
+ */
 var IconGrid = GObject.registerClass(
   {
     Signals: { 'animation-done': {}, 'child-focused': { param_types: [Clutter.Actor.$gtype] } }
@@ -249,6 +325,9 @@ var IconGrid = GObject.registerClass(
       this.connect('destroy', this._onDestroy.bind(this));
     }
 
+    /**
+     * Cancels animations when unmapping.
+     */
     vfunc_unmap() {
       // Cancel animations when hiding the overview, to avoid icons
       // swarming into the void ...
@@ -256,6 +335,10 @@ var IconGrid = GObject.registerClass(
       super.vfunc_unmap();
     }
 
+    /**
+     * Cleans up any deferred work.
+     * @private
+     */
     _onDestroy() {
       if (this._updateIconSizesLaterId) {
         Meta.later_remove(this._updateIconSizesLaterId);
@@ -263,10 +346,21 @@ var IconGrid = GObject.registerClass(
       }
     }
 
+    /**
+     * Emits a signal when a child is focused.
+     * @param {St.Actor} actor - The child actor.
+     * @private
+     */
     _keyFocusIn(actor) {
       this.emit('child-focused', actor);
     }
 
+    /**
+     * Handles child addition to the grid.
+     * @param {St.Widget} grid - The grid widget.
+     * @param {Clutter.Actor} child - The child actor.
+     * @private
+     */
     _childAdded(grid, child) {
       child._iconGridKeyFocusInId = child.connect('key-focus-in', this._keyFocusIn.bind(this));
 
@@ -278,6 +372,12 @@ var IconGrid = GObject.registerClass(
       });
     }
 
+    /**
+     * Handles child removal from the grid.
+     * @param {St.Widget} grid - The grid widget.
+     * @param {Clutter.Actor} child - The child actor.
+     * @private
+     */
     _childRemoved(grid, child) {
       child.disconnect(child._iconGridKeyFocusInId);
       delete child._iconGridKeyFocusInId;
@@ -287,6 +387,11 @@ var IconGrid = GObject.registerClass(
       delete child._paintVisible;
     }
 
+    /**
+     * Returns the preferred width.
+     * @param {number} _forHeight - Height constraint.
+     * @returns {number} Preferred width.
+     */
     vfunc_get_preferred_width(_forHeight) {
       if (this._fillParent)
         // Ignore all size requests of children and request a size of 0;
@@ -305,10 +410,20 @@ var IconGrid = GObject.registerClass(
       return this.get_theme_node().adjust_preferred_width(minSize, natSize);
     }
 
+    /**
+     * Returns the visible children of the grid.
+     * @returns {Clutter.Actor[]} Array of visible children.
+     * @private
+     */
     _getVisibleChildren() {
       return this.get_children().filter((actor) => actor.visible);
     }
 
+    /**
+     * Returns the preferred height.
+     * @param {number} forWidth - Width constraint.
+     * @returns {number[]} Preferred height.
+     */
     vfunc_get_preferred_height(forWidth) {
       if (this._fillParent)
         // Ignore all size requests of children and request a size of 0;
@@ -334,14 +449,17 @@ var IconGrid = GObject.registerClass(
       return themeNode.adjust_preferred_height(height, height);
     }
 
-    vfunc_allocate(box, flags) {
-      this.set_allocation(box, flags);
+    /**
+     * Allocates space for the grid and its children.
+     * @param {Clutter.ActorBox} box - The allocation box.
+     */
+    vfunc_allocate(box) {
+      this.set_allocation(box);
 
       let themeNode = this.get_theme_node();
       box = themeNode.get_content_box(box);
 
       if (this._fillParent) {
-        // Reset the passed in box to fill the parent
         let parentBox = this.get_parent().allocation;
         let gridBox = themeNode.get_content_box(parentBox);
         box = themeNode.get_content_box(gridBox);
@@ -382,7 +500,8 @@ var IconGrid = GObject.registerClass(
         } else {
           if (!animating) children[i].opacity = 255;
 
-          if (animateIconPosition(children[i], childBox, flags, nChangedIcons)) nChangedIcons++;
+          if (animateIconPosition(children[i], childBox, nChangedIcons))
+            nChangedIcons++;
         }
 
         columnIndex++;
@@ -400,6 +519,11 @@ var IconGrid = GObject.registerClass(
       }
     }
 
+    /**
+     * Returns the paint volume for the grid.
+     * @param {Clutter.PaintVolume} paintVolume - The paint volume.
+     * @returns {boolean} True if paint volume is set.
+     */
     vfunc_get_paint_volume(paintVolume) {
       // Setting the paint volume does not make sense when we don't have
       // any allocation
@@ -432,14 +556,19 @@ var IconGrid = GObject.registerClass(
       return true;
     }
 
-    /*
-     * Intended to be override by subclasses if they need a different
-     * set of items to be animated.
+    /**
+     * Returns the children to animate.
+     * @returns {Clutter.Actor[]} Array of children to animate.
+     * @private
      */
     _getChildrenToAnimate() {
       return this._getVisibleChildren().filter((child) => child.opacity > 0);
     }
 
+    /**
+     * Resets animation actors.
+     * @private
+     */
     _resetAnimationActors() {
       this._clonesAnimating.forEach((clone) => {
         clone.source.reactive = true;
@@ -449,11 +578,19 @@ var IconGrid = GObject.registerClass(
       this._clonesAnimating = [];
     }
 
+    /**
+     * Handles animation completion.
+     * @private
+     */
     _animationDone() {
       this._resetAnimationActors();
       this.emit('animation-done');
     }
 
+    /**
+     * Animates a pulse effect.
+     * @param {number} animationDirection - The animation direction.
+     */
     animatePulse(animationDirection) {
       if (animationDirection != AnimationDirection.IN) {
         throw new GObject.NotImplementedError('Pulse animation only implements ' + "'in' animation direction");
@@ -504,6 +641,11 @@ var IconGrid = GObject.registerClass(
       }
     }
 
+    /**
+     * Animates a spring effect.
+     * @param {number} animationDirection - The animation direction.
+     * @param {Clutter.Actor} sourceActor - The source actor.
+     */
     animateSpring(animationDirection, sourceActor) {
       this._resetAnimationActors();
 
@@ -621,6 +763,12 @@ var IconGrid = GObject.registerClass(
       });
     }
 
+    /**
+     * Returns the allocated size and spacing for a child.
+     * @param {Clutter.Actor} child - The child actor.
+     * @returns {number[]} Array containing width, height, xSpacing, and ySpacing.
+     * @private
+     */
     _getAllocatedChildSizeAndSpacing(child) {
       let [, , natWidth, natHeight] = child.get_preferred_size();
       let width = Math.min(this._getHItemSize(), natWidth);
@@ -630,6 +778,15 @@ var IconGrid = GObject.registerClass(
       return [width, height, xSpacing, ySpacing];
     }
 
+    /**
+     * Calculates the allocation box for a child.
+     * @param {Clutter.Actor} child - The child actor.
+     * @param {number} x - X coordinate.
+     * @param {number} y - Y coordinate.
+     * @param {Clutter.ActorBox} box - The parent box.
+     * @returns {Clutter.ActorBox} The calculated box.
+     * @private
+     */
     _calculateChildBox(child, x, y, box) {
       /* Center the item in its allocation horizontally */
       let [width, height, childXSpacing, childYSpacing] = this._getAllocatedChildSizeAndSpacing(child);
@@ -647,14 +804,29 @@ var IconGrid = GObject.registerClass(
       return childBox;
     }
 
+    /**
+     * Returns the number of columns for a given width.
+     * @param {number} rowWidth - The row width.
+     * @returns {number} Number of columns.
+     */
     columnsForWidth(rowWidth) {
       return this._computeLayout(rowWidth)[0];
     }
 
+    /**
+     * Returns the row limit.
+     * @returns {number|null} The row limit.
+     */
     getRowLimit() {
       return this._rowLimit;
     }
 
+    /**
+     * Computes the layout for a given width.
+     * @param {number} forWidth - The width.
+     * @returns {number[]} Array containing number of columns and used width.
+     * @private
+     */
     _computeLayout(forWidth) {
       this.ensure_style();
 
@@ -672,6 +844,10 @@ var IconGrid = GObject.registerClass(
       return [nColumns, usedWidth];
     }
 
+    /**
+     * Handles style changes.
+     * @private
+     */
     _onStyleChanged() {
       let themeNode = this.get_theme_node();
       this._spacing = themeNode.get_length('spacing');
@@ -680,6 +856,11 @@ var IconGrid = GObject.registerClass(
       this.queue_relayout();
     }
 
+    /**
+     * Returns the number of rows for a given width.
+     * @param {number} forWidth - The width.
+     * @returns {number} Number of rows.
+     */
     nRows(forWidth) {
       let children = this._getVisibleChildren();
       let nColumns = forWidth < 0 ? children.length : this._computeLayout(forWidth)[0];
@@ -688,6 +869,11 @@ var IconGrid = GObject.registerClass(
       return nRows;
     }
 
+    /**
+     * Returns the number of rows for a given height.
+     * @param {number} forHeight - The height.
+     * @returns {number} Number of rows.
+     */
     rowsForHeight(forHeight) {
       return Math.floor(
         (forHeight - (this.topPadding + this.bottomPadding) + this._getSpacing()) /
@@ -695,32 +881,58 @@ var IconGrid = GObject.registerClass(
       );
     }
 
+    /**
+     * Returns the used height for a given number of rows.
+     * @param {number} nRows - The number of rows.
+     * @returns {number} Used height.
+     */
     usedHeightForNRows(nRows) {
       return (
         (this._getVItemSize() + this._getSpacing()) * nRows - this._getSpacing() + this.topPadding + this.bottomPadding
       );
     }
 
+    /**
+     * Returns the used width for a given width.
+     * @param {number} forWidth - The width.
+     * @returns {number} Used width.
+     */
     usedWidth(forWidth) {
       return this.usedWidthForNColumns(this.columnsForWidth(forWidth));
     }
 
+    /**
+     * Returns the used width for a given number of columns.
+     * @param {number} columns - The number of columns.
+     * @returns {number} Used width.
+     */
     usedWidthForNColumns(columns) {
       let usedWidth = columns * (this._getHItemSize() + this._getSpacing());
       usedWidth -= this._getSpacing();
       return usedWidth + this.leftPadding + this.rightPadding;
     }
 
+    /**
+     * Removes all items from the grid.
+     */
     removeAll() {
       this._items = [];
       this.remove_all_children();
     }
 
+    /**
+     * Destroys all items in the grid.
+     */
     destroyAll() {
       this._items = [];
       this.destroy_all_children();
     }
 
+    /**
+     * Adds an item to the grid.
+     * @param {Object} item - The item to add.
+     * @param {number} [index] - The index to insert at.
+     */
     addItem(item, index) {
       if (!(item.icon instanceof BaseIcon))
         throw new Error('Only items with a BaseIcon icon property can be added to IconGrid');
@@ -730,34 +942,72 @@ var IconGrid = GObject.registerClass(
       else this.add_actor(item);
     }
 
+    /**
+     * Removes an item from the grid.
+     * @param {Object} item - The item to remove.
+     */
     removeItem(item) {
       this.remove_child(item);
     }
 
+    /**
+     * Returns the item at a given index.
+     * @param {number} index - The index.
+     * @returns {Object} The item.
+     */
     getItemAtIndex(index) {
       return this.get_child_at_index(index);
     }
 
+    /**
+     * Returns the count of visible items.
+     * @returns {number} Count of visible items.
+     */
     visibleItemsCount() {
       return this.get_children().filter((c) => c.is_visible()).length;
     }
 
+    /**
+     * Sets the spacing between items.
+     * @param {number} spacing - The spacing.
+     */
     setSpacing(spacing) {
       this._fixedSpacing = spacing;
     }
 
+    /**
+     * Returns the spacing between items.
+     * @returns {number} The spacing.
+     * @private
+     */
     _getSpacing() {
       return this._fixedSpacing ? this._fixedSpacing : this._spacing;
     }
 
+    /**
+     * Returns the horizontal item size.
+     * @returns {number} The horizontal item size.
+     * @private
+     */
     _getHItemSize() {
       return this._fixedHItemSize ? this._fixedHItemSize : this._hItemSize;
     }
 
+    /**
+     * Returns the vertical item size.
+     * @returns {number} The vertical item size.
+     * @private
+     */
     _getVItemSize() {
       return this._fixedVItemSize ? this._fixedVItemSize : this._vItemSize;
     }
 
+    /**
+     * Updates the spacing for the available size.
+     * @param {number} availWidth - The available width.
+     * @param {number} availHeight - The available height.
+     * @private
+     */
     _updateSpacingForSize(availWidth, availHeight) {
       let maxEmptyVArea = availHeight - this._minRows * this._getVItemSize();
       let maxEmptyHArea = availWidth - this._minColumns * this._getHItemSize();
@@ -786,9 +1036,10 @@ var IconGrid = GObject.registerClass(
       if (this._padWithSpacing) this.topPadding = this.rightPadding = this.bottomPadding = this.leftPadding = spacing;
     }
 
-    /*
-     * This function must to be called before iconGrid allocation,
-     * to know how much spacing can the grid has
+    /**
+     * Adapts the grid layout to the available size.
+     * @param {number} availWidth - The available width.
+     * @param {number} availHeight - The available height.
      */
     adaptToSize(availWidth, availHeight) {
       this._fixedHItemSize = this._hItemSize;
@@ -823,7 +1074,11 @@ var IconGrid = GObject.registerClass(
       }
     }
 
-    // Note that this is ICON_SIZE as used by BaseIcon, not elsewhere in IconGrid; it's a bit messed up
+    /**
+     * Updates the icon sizes.
+     * @returns {boolean} GLib.SOURCE_REMOVE.
+     * @private
+     */
     _updateIconSizes() {
       this._updateIconSizesLaterId = 0;
       let scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
@@ -832,6 +1087,65 @@ var IconGrid = GObject.registerClass(
       for (let i in this._items) this._items[i].icon.setIconSize(newIconSize);
 
       return GLib.SOURCE_REMOVE;
+    }
+
+    /**
+     * Navigates focus within the grid and may wrap-around.
+     * @param {St.Actor|null} current - The currently focused actor.
+     * @param {St.DirectionType} direction - The navigation direction.
+     * @param {boolean} wrap - Whether to wrap around.
+     * @returns {boolean} True if focus changed.
+     */
+    navigate_focus(current, direction, wrap = true) {
+      let children = this._getVisibleChildren();
+      if (!children || children.length === 0)
+        return false;
+      let idx = children.indexOf(current);
+      // If current not found then focus the first child.
+      if (idx < 0) {
+        children[0].grab_key_focus();
+        return true;
+      }
+      let n = children.length;
+      let allocation = this.allocation;
+      let gridWidth = allocation.x2 - allocation.x1;
+      let layout = this._computeLayout(gridWidth);
+      let nColumns = layout[0] || 1;
+      let newIndex = idx;
+      
+      if (direction === St.DirectionType.LEFT) {
+        newIndex = idx - 1;
+        if (newIndex < 0)
+          newIndex = wrap ? n - 1 : 0;
+      } else if (direction === St.DirectionType.RIGHT) {
+        newIndex = idx + 1;
+        if (newIndex >= n)
+          newIndex = wrap ? 0 : n - 1;
+      } else if (direction === St.DirectionType.UP) {
+        newIndex = idx - nColumns;
+        if (newIndex < 0) {
+          // Wrap to the bottom row in the same column if possible.
+          newIndex = idx % nColumns;
+          let lastRow = Math.floor((n - 1) / nColumns);
+          newIndex += lastRow * nColumns;
+          if (newIndex >= n)
+            newIndex -= nColumns;
+        }
+      } else if (direction === St.DirectionType.DOWN) {
+        newIndex = idx + nColumns;
+        if (newIndex >= n) {
+          // Wrap to the top row in the same column.
+          newIndex = idx % nColumns;
+        }
+      } else {
+        return false;
+      }
+      let newChild = children[newIndex];
+      if (newChild) {
+        newChild.grab_key_focus();
+        return true;
+      }
+      return false;
     }
   }
 );

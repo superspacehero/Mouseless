@@ -1,5 +1,11 @@
-/* exported TenFootScreen */
+// ========================================================================
+// This file implements the main fullscreen interface for the Mouseless extension.
+// It defines the MouselessScreen class which manages UI components, view switching,
+// layout adjustments, and key event handling.
+// ========================================================================
+/* exported MouselessScreen */
 const { Clutter, Meta, Shell, St } = imports.gi;
+const Signals = imports.signals;
 
 const Main = imports.ui.main;
 const ExtensionUtils = imports.misc.extensionUtils;
@@ -7,24 +13,64 @@ const Me = ExtensionUtils.getCurrentExtension();
 const MenuList = Me.imports.menuList;
 const AppGrid = Me.imports.appGrid;
 const Sounds = Me.imports.sounds;
+const KeyEvents = Me.imports.keyEvents.KeyEvents;
 
-var TenFootScreen = class {
+/**
+ * A simple view manager for switching between views.
+ */
+var ViewManager = class {
+  /**
+   * Constructs a new ViewManager instance.
+   */
+  constructor() {
+    this._views = {};
+    this._currentView = null;
+  }
+
+  /**
+   * Adds a view to the manager.
+   * @param {string} name - The name of the view.
+   * @param {St.Widget} view - The view widget.
+   */
+  addView(name, view) {
+    this._views[name] = view;
+    view.hide();
+  }
+
+  /**
+   * Shows a view by name and hides the current one if necessary.
+   * @param {string} name - The name of the view to show.
+   */
+  showView(name) {
+    if (this._views[name]) {
+      if (this._currentView && this._currentView !== this._views[name]) {
+        this._currentView.hide();
+      }
+      this._currentView = this._views[name];
+      this._currentView.show();
+    }
+  }
+};
+
+/**
+ * Represents the main fullscreen interface.
+ */
+var MouselessScreen = class {
+  /**
+   * Constructs the MouselessScreen, creating all UI components.
+   */
   constructor() {
     this.lightbox = new St.Widget({
       visible: false,
-      // can_focus: false,
-      // reactive: false,
-      style: 'background-color: #000'
+      style_class: 'ml-lightbox'
     });
     Main.layoutManager.addTopChrome(this.lightbox);
 
     this.actor = new St.Widget({
-      name: 'tenfootGroup',
-      style_class: 'tf-group',
+      name: 'mouselessGroup',
+      style_class: 'ml-group',
       x_expand: true,
       y_expand: true,
-      // can_focus: false,
-      // reactive: false,
       visible: false,
       clip_to_allocation: true,
       layout_manager: new Clutter.BinLayout()
@@ -35,24 +81,24 @@ var TenFootScreen = class {
 
     this.settings = ExtensionUtils.getSettings(SCHEMA_KEY);
 
-    // add menu
-    // TODO: Add view manager to switch between these views
+    // add menu view and apps view
     this.list = new MenuList.ListViewManager({ visible: false });
     this.actor.add_child(this.list);
 
     this.apps = new AppGrid.AppGrid({ visible: true });
     this.actor.add_child(this.apps);
 
+    // Create and configure view manager for switching views
+    this.viewManager = new ViewManager();
+    this.viewManager.addView('list', this.list);
+    this.viewManager.addView('apps', this.apps);
+    // Initially show the apps view
+    this.viewManager.showView('apps');
+
     this.sounds = new Sounds.Sounds();
 
     Main.layoutManager.connect('startup-prepared', () => {
       this._adjustSize();
-    });
-
-    Main.layoutManager.connect('startup-complete', () => {
-      if (this.settings.get_boolean('show-on-startup')) {
-        this.showModal();
-      }
     });
 
     this.actor.connect('show', () => {
@@ -70,27 +116,57 @@ var TenFootScreen = class {
       this._grabFocus(this.apps.appView, St.DirectionType.TAB_BACKWARD);
     });
 
-    global.stage.connect('key-press-event', this._onStageKeyPressed.bind(this));
+    this.actor.connect('key-press-event', (actor, event) => {
+      return KeyEvents.handleStageKeyPress(this, event);
+    });
+
+    // Connect to key event signals emitted by KeyEvents.js
+    this.connect('back', (screen, event) => {
+      // Handle 'back': close the interface
+      this.hideModal(true);
+    });
+    this.connect('movement', (screen, event) => {
+      if (this.apps && this.apps.appView && typeof this.apps.appView.movement === 'function') {
+        this.apps.appView.movement(this.apps.appView, event);
+      }
+    });
+    this.connect('select', (screen, event) => {
+      // Handle 'select' (Enter key): activate the currently focused element
+      let focused = global.stage.get_key_focus();
+      if (focused && typeof focused.activate === 'function') {
+        focused.activate(Clutter.get_current_event());
+      }
+    });
 
     Shell.AppSystem.get_default().connect('app-state-changed', this._updateRunningCount.bind(this));
   }
 
+  /**
+   * Exits the interface.
+   */
   exit() {
     this.hideModal(true);
     this.homeScreen();
   }
+
+  /**
+   * Shows the settings view.
+   */
   showSettings() {
-    this.apps.hide();
-    this.list.show();
-    // this._grabFocus();
+    this.viewManager.showView('list');
   }
 
+  /**
+   * Switches back to the home (apps) screen.
+   */
   homeScreen() {
-    this.list.hide();
-    this.apps.show();
-    // this._grabFocus();
+    this.viewManager.showView('apps');
   }
 
+  /**
+   * Adjusts sizes and positions of modal elements.
+   * @private
+   */
   _adjustSize() {
     this.lightbox.set_position(0, 0);
     this.lightbox.set_size(global.screen_width, global.screen_height);
@@ -100,6 +176,12 @@ var TenFootScreen = class {
     this.actor.set_size(Main.layoutManager.primaryMonitor.width, Main.layoutManager.primaryMonitor.height);
   }
 
+  /**
+   * Updates the count of running applications and shows/hides the interface.
+   * @param {object} appSys - The application system.
+   * @param {Object} app - An application instance.
+   * @private
+   */
   _updateRunningCount(appSys, app) {
     if (app) {
       if (app.state == Shell.AppState.STARTING) {
@@ -115,6 +197,12 @@ var TenFootScreen = class {
     }
   }
 
+  /**
+   * Grabs focus for the provided actor.
+   * @param {St.Widget} actor - The actor to focus.
+   * @param {St.DirectionType} [direction=St.DirectionType.TAB_FORWARD] - Focus navigation direction.
+   * @private
+   */
   _grabFocus(actor, direction = St.DirectionType.TAB_FORWARD) {
     // fixes issue where item becomes active, but not focused,
     // likely a race condition if the first focusable child doesn't exist when we move the focus to the root
@@ -127,32 +215,30 @@ var TenFootScreen = class {
     }
   }
 
-  _onStageKeyPressed(actor, event) {
-    // let shift = event.has_shift_modifier();
-    // let code = event.get_key_code();
-    let symbol = event.get_key_symbol();
-
-    // press Q to exit interface
-    if (symbol == Clutter.KEY_Q || symbol == 113) {
-      // 113 = lowercase Q
-      this.hideModal(true);
-      return Clutter.EVENT_STOP;
-    }
-    return Clutter.EVENT_PROPAGATE;
-  }
-
+  /**
+   * Shows the interface modal.
+   * @param {boolean} [skipAnimation=false] - If true, skip fade-in animation.
+   */
   showModal(skipAnimation = false) {
     if (!this._grabModal()) {
-      // TODO: Make this error visible to the user
-      log('Could not acquire modal grab for the 10-foot screen!');
+      Main.notify('Unable to acquire modal grab for the interface!');
+      log("showModal: Modal grab failed.");
+    } else {
+      log("showModal: Modal grab acquired.");
     }
     this._isShown = true;
-    // set to the very top of the ui stack to cover all other components
+    // Place the modal actor below the top window group
     Main.layoutManager.uiGroup.set_child_below_sibling(this.actor, global.top_window_group);
-    // set our lightbox below the main ui group
+    // Place the lightbox just below the modal actor
     Main.layoutManager.uiGroup.set_child_below_sibling(this.lightbox, this.actor);
 
     this.lightbox.show();
+
+    // Close interface if clicking on the background
+    this.lightbox.connect('button-press-event', (actor, event) => {
+      this.hideModal(true);
+      return Clutter.EVENT_STOP;
+    });
 
     if (!this.actor.visible) {
       this.actor.show();
@@ -167,9 +253,24 @@ var TenFootScreen = class {
         this.actor.opacity = 255;
       }
     }
+    // Ensure the interface receives key events
+    this.actor.reactive = true;
+    this.actor.can_focus = true;
+    global.stage.set_key_focus(this.actor);
+    this.actor.grab_key_focus();
+    log("Mouseless interface open");
   }
 
+  /**
+   * Hides the interface modal.
+   * @param {boolean} [userHidden=false] - If true, marks the interface as user-hidden.
+   */
   hideModal(userHidden = false) {
+    if (!this.actor) {
+      log("hideModal: actor is already null.");
+      return;
+    }
+    
     this.actor.remove_all_transitions();
     this.actor.opacity = 0;
     if (userHidden) {
@@ -177,28 +278,56 @@ var TenFootScreen = class {
     }
 
     this._removeModal();
-    this.lightbox.hide();
-    this.actor.hide();
-    // reset
-    this.homeScreen();
-  }
-
-  _removeModal() {
-    if (this._isModal) {
-      Main.popModal(this.actor);
-      this._isModal = false;
+    if (this.lightbox) {
+      this.lightbox.hide();
     }
+    this.actor.hide();
+    // reset view to homeScreen
+    this.homeScreen();
+    log("hideModal: Interface hidden.");
   }
 
+  /**
+   * Acquires the modal grab.
+   * @returns {number|boolean} The modal token.
+   * @private
+   */
   _grabModal() {
-    if (this._isModal) {
+    if (this._modalToken) {
       return true;
     }
-    this._isModal = Main.pushModal(this.actor, {
+    this._modalToken = Main.pushModal(this.actor, {
       actionMode: Shell.ActionMode.NONE
-      // seems to fix unclutter, we don't need the mouse pointer anyways
-      // options: Meta.ModalOptions.POINTER_ALREADY_GRABBED
     });
-    return this._isModal;
+    return this._modalToken;
+  }
+
+  /**
+   * Removes the modal grab.
+   * @private
+   */
+  _removeModal() {
+    if (this._modalToken) {
+      Main.popModal(this._modalToken);
+      this._modalToken = null;
+    }
+  }
+
+  /**
+   * Destroys the interface elements.
+   */
+  destroy() {
+    if (this.actor) {
+      this.actor.destroy();
+      this.actor = null;
+    }
+    if (this.lightbox) {
+      this.lightbox.destroy();
+      this.lightbox = null;
+    }
+    // Add any additional cleanup if necessary
   }
 };
+
+// Add signals capability to MouselessScreen
+Signals.addSignalMethods(MouselessScreen.prototype);
