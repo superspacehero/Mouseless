@@ -12,7 +12,14 @@ glib-compile-schemas ./extension/schemas/
 # Using awk to treat each error block as a record (with RS set to empty)
 # and printing the entire block only if it contains "mouseless".
 echo "Starting mouseless log tracking..."
-journalctl -f -o cat /usr/bin/gnome-shell | awk 'BEGIN { RS=""; ORS="\n\n" } { if (tolower($0) ~ /mouseless/) print $0 }' >/tmp/mouseless.log &
+journalctl -f -o cat /usr/bin/gnome-shell | awk '{
+    if (tolower($0) ~ /mouseless/) {
+        if ($0 ~ /^Mouseless:/)
+            print $0;
+        else
+            print "Mouseless: " $0;
+    }
+}' >/tmp/mouseless.log &
 LOG_PID=$!
 
 # Give logs a moment to start gathering

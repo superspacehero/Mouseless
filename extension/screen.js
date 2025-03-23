@@ -222,9 +222,9 @@ var MouselessScreen = class {
   showModal(skipAnimation = false) {
     if (!this._grabModal()) {
       Main.notify('Unable to acquire modal grab for the interface!');
-      log("showModal: Modal grab failed.");
+      log("Mouseless: showModal: Modal grab failed.");
     } else {
-      log("showModal: Modal grab acquired.");
+      log("Mouseless: showModal: Modal grab acquired.");
     }
     this._isShown = true;
     // Place the modal actor below the top window group
@@ -258,7 +258,7 @@ var MouselessScreen = class {
     this.actor.can_focus = true;
     global.stage.set_key_focus(this.actor);
     this.actor.grab_key_focus();
-    log("Mouseless interface open");
+    log("Mouseless: interface open");
   }
 
   /**
@@ -267,7 +267,7 @@ var MouselessScreen = class {
    */
   hideModal(userHidden = false) {
     if (!this.actor) {
-      log("hideModal: actor is already null.");
+      log("Mouseless: hideModal: actor is already null.");
       return;
     }
     
@@ -284,7 +284,7 @@ var MouselessScreen = class {
     this.actor.hide();
     // reset view to homeScreen
     this.homeScreen();
-    log("hideModal: Interface hidden.");
+    log("Mouseless: hideModal: Interface hidden.");
   }
 
   /**

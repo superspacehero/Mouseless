@@ -19,6 +19,31 @@ var MAX_COLUMNS = 5;
 var MIN_COLUMNS = 3;
 var MIN_ROWS = 4;
 
+/**
+ * Helper function to get the running app id from an app object.
+ * This function checks if the app has a method to get its id and
+ * if it starts with "window:". If so, it attempts to get the
+ * desktop file id from the app's info.
+ * @param {Object} app - The application object.
+ * @return {string|null} - The app id or null if it cannot be resolved.
+ */
+function getRunningAppId(app) {
+    // Get the raw id (it might be something like "window:16")
+    let rawId = (app.get_id ? app.get_id() : String(app.id)).toLowerCase();
+    if (rawId.startsWith("window:") && app.get_app_info) {
+        try {
+            let info = app.get_app_info();
+            let desktopId = info.get_desktop_file_id();
+            if (desktopId && desktopId.trim() !== "")
+                return desktopId.toLowerCase();
+        } catch (e) {
+            // fallback: ignore this running app id if we cannot resolve
+            return null;
+        }
+    }
+    return rawId;
+}
+
 var BaseAppIcon = GObject.registerClass(
   {
     Signals: {
@@ -166,7 +191,22 @@ var AppIcon = GObject.registerClass(
      */
     _init(app) {
       let name = app.get_name ? String(app.get_name()) : String(app.name);
-      let id = app.get_id ? String(app.get_id()) : String(app.id);
+      let id;
+      if (app.get_id) {
+        id = String(app.get_id());
+        if (id.startsWith("window:") && app.get_app_info) {
+          try {
+            let info = app.get_app_info();
+            let desktopId = info.get_desktop_file_id();
+            if (desktopId && desktopId !== "")
+              id = desktopId;
+          } catch (e) {
+            // fallback, keep existing id
+          }
+        }
+      } else {
+        id = String(app.id);
+      }
       super._init(app, name, id);
     }
 
@@ -519,40 +559,52 @@ var AppView = GObject.registerClass(
       let backendApps = Me.stateObj.appBackend.getAllApps();
       let icons = [];
       
-      // Create an AppIcon for each app in the list.
+      // Create an AppIcon for each app in the backend.
       for (let i = 0; i < backendApps.length; i++) {
         let app = backendApps[i];
         icons.push(new AppIcon(app));
       }
       
-      // Retrieve favorite and running app IDs.
-      let favoriteAppIds = [];
-      if (AppFavorites.getAppFavorites().getFavoriteAppIds)
-        favoriteAppIds = AppFavorites.getAppFavorites().getFavoriteAppIds();
-      favoriteAppIds = favoriteAppIds.map(id => id.toLowerCase());
+      // Replace the loop for determining running apps with global window actors.
+      // Note: using meta.get_wm_class() as a substitute for getRunningAppId().
+      let runningAppIds = global.get_window_actors()
+        .map(wa => wa.get_meta_window())
+        .map(meta => meta.get_wm_class().toLowerCase());
+      log("Mouseless: Running apps: " + runningAppIds.join(", "));
       
-      let runningApps = Shell.AppSystem.get_default().get_running();
-      let runningAppIds = runningApps.map(app => (app.get_id ? app.get_id() : app.id).toLowerCase());
+      // Retrieve favorite IDs from the favorite map.
+      let favorites = AppFavorites.getAppFavorites().getFavoriteMap();
+      let favoriteAppIds = Object.keys(favorites).map(id => id.toLowerCase());
+      log("Mouseless: Favorites from settings: " + favoriteAppIds.join(", "));
+
+      // Group the icons accordingly.
+      let existingIds = icons.map(icon => icon.getId().toLowerCase());
+      let favIcons = favoriteAppIds.map(id => icons.find(icon => icon.getId().toLowerCase() === id)).filter(icon => icon);
+      let runningIcons = icons.filter(icon => {
+          let id = icon.getId().toLowerCase();
+          return runningAppIds.includes(id) && !favoriteAppIds.includes(id);
+      });
+      let otherIcons = icons.filter(icon => {
+          let id = icon.getId().toLowerCase();
+          return !favoriteAppIds.includes(id) && !runningAppIds.includes(id);
+      });
       
-      // Filter icons into groups: favorites, running (but not favorites), and others.
-      let favIcons = icons.filter(icon => favoriteAppIds.includes(icon.getId().toLowerCase()));
-      let runningIcons = icons.filter(icon => runningAppIds.includes(icon.getId().toLowerCase()) &&
-                                               !favoriteAppIds.includes(icon.getId().toLowerCase()));
-      let otherIcons = icons.filter(icon => !favoriteAppIds.includes(icon.getId().toLowerCase()) &&
-                                              !runningAppIds.includes(icon.getId().toLowerCase()));
-      
-      // Log group details to help with debugging.
+      // Log each group for debugging.
       favIcons.forEach(icon => log("Mouseless: [FAV] " + icon.getId()));
       runningIcons.forEach(icon => log("Mouseless: [RUN] " + icon.getId()));
       otherIcons.forEach(icon => log("Mouseless: [OTH] " + icon.getId()));
       
-      // Sort each group alphabetically.
-      favIcons.sort((a, b) => a.name.localeCompare(b.name));
-      runningIcons.sort((a, b) => a.name.localeCompare(b.name));
-      otherIcons.sort((a, b) => a.name.localeCompare(b.name));
-      
-      // Concatenate groups in order: favorites, then running, then the rest.
-      let sortedIcons = favIcons.concat(runningIcons, otherIcons);
+      // Combine groups with a divider if there are favorites/running apps and others.
+      let sortedIcons;
+      if ((favIcons.length > 0 || runningIcons.length > 0) && otherIcons.length > 0) {
+        sortedIcons = favIcons.concat(runningIcons);
+        // Optionally, add a divider actor if desired.
+        let divider = new St.Widget({ style_class: 'ml-divider', reactive: false, x_expand: true });
+        sortedIcons.push(divider);
+        sortedIcons = sortedIcons.concat(otherIcons);
+      } else {
+        sortedIcons = favIcons.concat(runningIcons, otherIcons);
+      }
       
       return sortedIcons;
     }
