@@ -28,7 +28,7 @@ After the extension is installed, you'll notice a new panel menu at the top of t
 
 - `↑` / `↓` / `→` / `←`: Arrow keys navigate the home screen.
 - `Enter` / `Space`: Selects focused item
-- `Q`: Exit the 10-foot interface
+- `Esc`: Exit the 10-foot interface
 
 ### Managing Applications
 
@@ -36,7 +36,7 @@ The main grid view will show the applications in your favorites list in a grid.
 
 To manage your favorites:
 
-1. Exit the 10-foot interface (press `Q`), and go to your main applications list.
+1. Exit the 10-foot interface (press `Esc`), and go to your main applications list.
 1. Right-click on the application you want to add and select Add to Favorites, or Remove from Favorites.
 1. Reopen the 10-foot interface and you should see your customized apps in the grid. See [this guide](https://help.ubuntu.com/stable/ubuntu-help/shell-apps-favorites.html.en) for more information.
 
