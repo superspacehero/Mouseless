@@ -68,7 +68,7 @@ var BaseAppIcon = GObject.registerClass(
       super._init({
         style_class: 'app-well-app',
         pivot_point: new Graphene.Point({ x: 0.5, y: 0.5 }),
-        reactive: true,
+      reactive: true,
         button_mask: St.ButtonMask.ONE | St.ButtonMask.TWO,
         can_focus: true
       });
@@ -514,7 +514,8 @@ var AppView = GObject.registerClass(
     _redisplay() {
       let oldApps = this._orderedItems.slice();
       let oldAppIds = oldApps.map((icon) => icon.id);
-      let newApps = this._loadApps().sort(this._compareItems);
+      // Remove the sorting call because _loadApps returns an already ordered array.
+      let newApps = this._loadApps();
       let newAppIds = newApps.map((icon) => icon.id);
 
       let addedApps = newApps.filter((icon) => !oldAppIds.includes(icon.id));
@@ -538,11 +539,9 @@ var AppView = GObject.registerClass(
       this._viewIsReady = true;
       this.emit('view-loaded');
     }
-
-    _addFauxApp() {}
     /**
      * Loads applications and creates icons.
-     * @returns {Array} - An array of AppIcon instances.
+     * @returns {Array} - An array of AppIcon instances and empty row actors.
      */
     _loadApps() {
       // Lazy initialization of the AppBackend if it hasn't been created yet
@@ -565,45 +564,50 @@ var AppView = GObject.registerClass(
         icons.push(new AppIcon(app));
       }
       
-      // Replace the loop for determining running apps with global window actors.
-      // Note: using meta.get_wm_class() as a substitute for getRunningAppId().
+      // Determine running apps using Shell.AppSystem to get consistent ids.
+      const appSystem = Shell.AppSystem.get_default();
       let runningAppIds = global.get_window_actors()
-        .map(wa => wa.get_meta_window())
-        .map(meta => meta.get_wm_class().toLowerCase());
+        .map(wa => {
+          let meta = wa.get_meta_window();
+          let runningApp = appSystem.lookup_app(meta.get_wm_class());
+          return runningApp ? runningApp.get_id().toLowerCase() : "";
+        })
+        .filter(id => id.length > 0);
       log("Mouseless: Running apps: " + runningAppIds.join(", "));
       
       // Retrieve favorite IDs from the favorite map.
       let favorites = AppFavorites.getAppFavorites().getFavoriteMap();
       let favoriteAppIds = Object.keys(favorites).map(id => id.toLowerCase());
       log("Mouseless: Favorites from settings: " + favoriteAppIds.join(", "));
-
+      
       // Group the icons accordingly.
-      let existingIds = icons.map(icon => icon.getId().toLowerCase());
-      let favIcons = favoriteAppIds.map(id => icons.find(icon => icon.getId().toLowerCase() === id)).filter(icon => icon);
+      let favIcons = favoriteAppIds
+        .map(id => icons.find(icon => icon.getId().toLowerCase() === id))
+        .filter(icon => icon);
+        
       let runningIcons = icons.filter(icon => {
-          let id = icon.getId().toLowerCase();
-          return runningAppIds.includes(id) && !favoriteAppIds.includes(id);
+        let id = getRunningAppId(icon.app);
+        return runningAppIds.includes(id) && !favoriteAppIds.includes(id);
       });
+      
+      // Other icons: not in favorites and not running.
       let otherIcons = icons.filter(icon => {
-          let id = icon.getId().toLowerCase();
-          return !favoriteAppIds.includes(id) && !runningAppIds.includes(id);
+        let id = icon.getId().toLowerCase();
+        return !favoriteAppIds.includes(id) && !runningAppIds.includes(id);
       });
       
-      // Log each group for debugging.
-      favIcons.forEach(icon => log("Mouseless: [FAV] " + icon.getId()));
-      runningIcons.forEach(icon => log("Mouseless: [RUN] " + icon.getId()));
-      otherIcons.forEach(icon => log("Mouseless: [OTH] " + icon.getId()));
-      
-      // Combine groups with a divider if there are favorites/running apps and others.
-      let sortedIcons;
-      if ((favIcons.length > 0 || runningIcons.length > 0) && otherIcons.length > 0) {
-        sortedIcons = favIcons.concat(runningIcons);
-        // Optionally, add a divider actor if desired.
-        let divider = new St.Widget({ style_class: 'ml-divider', reactive: false, x_expand: true });
-        sortedIcons.push(divider);
+      otherIcons.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Combine groups: favorites, then running, then others.
+      let sortedIcons = [];
+      if (favIcons.length) {
+        sortedIcons = sortedIcons.concat(favIcons);
+      }
+      if (runningIcons.length) {
+        sortedIcons = sortedIcons.concat(runningIcons);
+      }
+      if (otherIcons.length) {
         sortedIcons = sortedIcons.concat(otherIcons);
-      } else {
-        sortedIcons = favIcons.concat(runningIcons, otherIcons);
       }
       
       return sortedIcons;
@@ -653,6 +657,30 @@ var AppView = GObject.registerClass(
     }
   }
 );
+
+var EmptyRow = GObject.registerClass(
+  {},
+  class EmptyRow extends St.Widget {
+    _init() {
+      super._init({ reactive: false, style_class: 'ml-empty-row', x_expand: true });
+      this.set_size(1, 20); // Set minimum width and desired height
+      this.id = "empty-row-" + Math.random().toString(36).slice(2, 7);
+      // Add dummy icon and name properties for compatibility with IconGrid's sorting/layout.
+      this.icon = this;
+      this.name = "";
+    }
+    getId() {
+      return this.id;
+    }
+    destroy() {
+      // no-op
+    }
+  }
+);
+
+function createEmptyRow() {
+  return new EmptyRow();
+}
 
 var AppGrid = GObject.registerClass(
   /**

@@ -3,6 +3,6 @@
   "description": "A ten-foot interface for HTPCs",
   "url": "https://github.com/superspacehero/Mouseless",
   "uuid": "mouseless@asherpinson.com",
-  "shell-version": ["3.36"],
+  "shell-version": ["41", "42", "43"],
   "settings-schema": "org.gnome.shell.extensions.mouseless"
 }
