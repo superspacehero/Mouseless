@@ -346,9 +346,7 @@ var AppIcon = GObject.registerClass(
 
 var AppView = GObject.registerClass(
   {
-    Signals: {
-      'view-loaded': {}
-    }
+    Signals: { 'view-loaded': {} }
   },
   /**
    * AppView manages the grid of application icons.
@@ -381,19 +379,13 @@ var AppView = GObject.registerClass(
 
       // Set up the grid view
       this._grid = new IconGrid.IconGrid(gridParams);
-
       this._grid.connect('child-focused', (grid, actor) => {
         this._childFocused(actor);
       });
       this._grid.connect('key-press-event', this.movement.bind(this));
 
-      // Standard hack for ClutterBinLayout
-      this._grid.x_expand = true;
-      this._grid._delegate = this;
-
       this._items = new Map();
       this._orderedItems = [];
-      this._viewLoadedHandlerId = 0;
       this._viewIsReady = false;
 
       this._scrollView = new St.ScrollView({
@@ -407,25 +399,26 @@ var AppView = GObject.registerClass(
 
       this._stack = new St.Widget({ layout_manager: new Clutter.BinLayout() });
       this._stack.add_actor(this._grid);
-
-      let box = new St.BoxLayout({
-        x_align: Clutter.ActorAlign.CENTER
-      });
+      let box = new St.BoxLayout({ x_align: Clutter.ActorAlign.CENTER });
       box.add_actor(this._stack);
       this._scrollView.add_actor(box);
 
       this._availWidth = 0;
       this._availHeight = 0;
 
-      // defer redisplay
+      // Set up deferred redisplay work; this is also later triggered on changes.
       this._redisplayWorkId = Main.initializeDeferredWork(this, this._redisplay.bind(this));
 
+      // Listen for app installation changes and favorites changes.
       Shell.AppSystem.get_default().connect('installed-changed', () => {
         this._viewIsReady = false;
         AppFavorites.getAppFavorites().reload();
         this._queueRedisplay();
       });
       AppFavorites.getAppFavorites().connect('changed', this._queueRedisplay.bind(this));
+      
+      // Trigger an initial redisplay at startup.
+      this._queueRedisplay();
     }
 
     /**
@@ -461,8 +454,9 @@ var AppView = GObject.registerClass(
     movement(actor, event) {
       let direction = event.movementDirection;
       if (direction && this._lastFocused) {
-      this._grid.navigate_focus(this._lastFocused, direction, false);
-      return Clutter.EVENT_STOP;
+        let wrap = (direction === St.DirectionType.LEFT || direction === St.DirectionType.RIGHT);
+        this._grid.navigate_focus(this._lastFocused, direction, wrap);
+        return Clutter.EVENT_STOP;
       }
       return Clutter.EVENT_PROPAGATE;
     }
