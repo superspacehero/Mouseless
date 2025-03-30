@@ -28,9 +28,16 @@ sleep 3
 # Clear terminal before restarting GNOME Shell for clearer error output
 clear
 
-# Restart GNOME Shell (X11 only)
-echo "Restarting GNOME Shell..."
-killall -3 gnome-shell
+if [ "$XDG_SESSION_TYPE" = "x11" ]; then
+    echo "Restarting GNOME Shell on X11..."
+    killall -3 gnome-shell
+elif [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+    echo "Restarting GNOME Shell on Wayland..."
+    killall -HUP gnome-shell
+else
+    echo "Unknown session type. Attempting to restart GNOME Shell..."
+    killall -3 gnome-shell
+fi
 
 # Give GNOME Shell a moment to restart
 sleep 5
