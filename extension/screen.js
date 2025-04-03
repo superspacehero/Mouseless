@@ -126,8 +126,8 @@ var MouselessScreen = class {
       this.hideModal(true);
     });
     this.connect('movement', (screen, event) => {
-      if (this.apps && this.apps.appView && typeof this.apps.appView.movement === 'function') {
-        this.apps.appView.movement(this.apps.appView, event);
+      if (this.apps && this.apps.appView) {
+        this.apps.appView.movement(event);
       }
     });
     this.connect('select', (screen, event) => {

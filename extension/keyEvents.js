@@ -40,6 +40,24 @@ var KeyEvents = {
             screen.emit('movement', event);
             return Clutter.EVENT_PROPAGATE;
         }
+        if ([Clutter.KEY_Page_Up, Clutter.KEY_Page_Down, Clutter.KEY_Home, Clutter.KEY_End].includes(symbol)) {
+            switch(symbol) {
+                case Clutter.KEY_Page_Up:
+                    event.movementDirection = 'page-up';
+                    break;
+                case Clutter.KEY_Page_Down:
+                    event.movementDirection = 'page-down';
+                    break;
+                case Clutter.KEY_Home:
+                    event.movementDirection = 'home';
+                    break;
+                case Clutter.KEY_End:
+                    event.movementDirection = 'end';
+                    break;
+            }
+            screen.emit('movement', event);
+            return Clutter.EVENT_PROPAGATE;
+        }
         if (symbol === Clutter.KEY_Return || symbol === Clutter.KEY_KP_Enter) {
             screen.emit('select', event);
             return Clutter.EVENT_STOP;

@@ -8,18 +8,16 @@
 echo "Compiling schemas..."
 glib-compile-schemas ./extension/schemas/
 
-# Start mouseless-specific log tracking in the background.
-# Using awk to treat each error block as a record (with RS set to empty)
-# and printing the entire block only if it contains "mouseless".
+# Capture any log output related to the Mouseless extension
 echo "Starting mouseless log tracking..."
-journalctl -f -o cat /usr/bin/gnome-shell | awk '{
-    if (tolower($0) ~ /mouseless/) {
-        if ($0 ~ /^Mouseless:/)
-            print $0;
-        else
-            print "Mouseless: " $0;
+journalctl -f -o cat _COMM=gnome-shell | awk 'BEGIN {
+    RS=""; FS="\n"; IGNORECASE=1
+}
+{
+    if ($0 ~ /mouseless/) {
+        print $0 "\n"
     }
-}' >/tmp/mouseless.log &
+}' > /tmp/mouseless.log &
 LOG_PID=$!
 
 # Give logs a moment to start gathering

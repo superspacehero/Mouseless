@@ -211,18 +211,26 @@ var AppIcon = GObject.registerClass(
     }
 
     /**
-     * Handles pointer enter events to set hover state and focus.
+     * Handles pointer enter events.
+     * Only reacts if the pointer is actively moving.
      * @override
      */
     vfunc_enter_event(event) {
+      // Only handle pointer enter if the pointer is moving.
+      if (this._appView && !this._appView._pointerIsMoving)
+        return Clutter.EVENT_STOP; // Ignore if pointer is not moving
       return Me.imports.keyEvents.KeyEvents.handlePointerEnter(this, event);
     }
 
     /**
-     * Handles pointer leave events to remove hover state.
+     * Handles pointer leave events.
+     * Only reacts if the pointer is actively moving.
      * @override
      */
     vfunc_leave_event(event) {
+      // Only handle pointer leave if the pointer is moving.
+      if (this._appView && !this._appView._pointerIsMoving)
+        return Clutter.EVENT_STOP; // Ignore if pointer is not moving
       return Me.imports.keyEvents.KeyEvents.handlePointerLeave(this, event);
     }
 
@@ -379,6 +387,11 @@ var AppView = GObject.registerClass(
 
       // Set up the grid view
       this._grid = new IconGrid.IconGrid(gridParams);
+      // Listen to pointer motion events to detect if the pointer is moving.
+      this._pointerIsMoving = false;
+      this._pointerMotionTimeout = null;
+      global.stage.connect('motion-event', this._onMotionEvent.bind(this));
+      
       this._grid.connect('child-focused', (grid, actor) => {
         this._childFocused(actor);
       });
@@ -433,31 +446,80 @@ var AppView = GObject.registerClass(
      * @param {St.Widget} icon - The focused icon.
      */
     _childFocused(icon) {
+      // Ensure the icon is visible in the scroll view
       Util.ensureActorVisibleInScrollView(this._scrollView, icon);
       this._lastFocused = icon;
       Me.stateObj.screen.sounds._playInterfaceClick();
     }
 
     /**
-     * Moves the focus on the grid based on the provided movement event.
+     * Handles movement events by adjusting the focused app icon.
      *
-     * This method extracts the movement direction from the given event and, if valid and
-     * there is an element that was last focused, it navigates the grid's focus accordingly.
-     * It returns Clutter.EVENT_STOP if the focus is successfully moved; otherwise, it returns
+     * This method extracts the movement direction from the given event,
+     * determines the current focused element among the grid's children,
+     * calculates the new focus index based on the specified direction and page size,
+     * and then sets the focus to that element if available. It returns
+     * Clutter.EVENT_STOP if the focus is successfully moved; otherwise, it returns
      * Clutter.EVENT_PROPAGATE.
      *
-     * @param {Object} actor - The actor associated with the event.
-     * @param {Object} event - The event object containing the movementDirection property.
-     * @param {string} event.movementDirection - The direction to move (e.g., St.DirectionType.RIGHT).
+     * @param {Clutter.Event} event - The movement event with a movementDirection property.
      * @returns {number} - Clutter.EVENT_STOP if moved, else Clutter.EVENT_PROPAGATE.
      */
-    movement(actor, event) {
+    movement(event) {
       let direction = event.movementDirection;
-      if (direction && this._lastFocused) {
-        let wrap = (direction === St.DirectionType.LEFT || direction === St.DirectionType.RIGHT);
-        this._grid.navigate_focus(this._lastFocused, direction, wrap);
+      // Use the maintained ordered items instead of this._grid.getChildren()
+      let children = this._orderedItems;
+      let currentIndex = children.findIndex(child => child.has_key_focus());
+      
+      if (currentIndex < 0) {
+        currentIndex = 0;
+      }
+      
+      let newIndex = currentIndex;
+      // Compute dynamic page size based on visible rows and columns.
+      let pageSize;
+      if (this._availWidth && this._availHeight) {
+        // Compute number of columns based on the current available width.
+        let layout = this._grid._computeLayout(this._availWidth);
+        let nColumns = layout[0] || 1;
+        // Compute the number of visible rows based on available height.
+        let visibleRows = this._grid.rowsForHeight(this._availHeight);
+        // Subtract one row to ensure proper pagination from the top to the bottom.
+        visibleRows = visibleRows > 1 ? visibleRows - 1 : visibleRows;
+        pageSize = visibleRows * nColumns;
+      } else {
+        // Fallback: use a fixed page size.
+        pageSize = 10;
+      }
+      
+      switch (direction) {
+        case 'page-up':
+          newIndex = Math.max(0, currentIndex - pageSize);
+          break;
+        case 'page-down':
+          newIndex = Math.min(children.length - 1, currentIndex + pageSize);
+          break;
+        case 'home':
+          newIndex = 0;
+          break;
+        case 'end':
+          newIndex = children.length - 1;
+          break;
+        default:
+          if (Object.values(St.DirectionType).includes(direction)) {
+            let wrap = (direction === St.DirectionType.LEFT || direction === St.DirectionType.RIGHT);
+            this._grid.navigate_focus(this._lastFocused, direction, wrap);
+            return Clutter.EVENT_STOP;
+          } else {
+            return Clutter.EVENT_PROPAGATE;
+          }
+      }
+      
+      if (children[newIndex]) {
+        children[newIndex].grab_key_focus();
         return Clutter.EVENT_STOP;
       }
+      
       return Clutter.EVENT_PROPAGATE;
     }
 
@@ -648,6 +710,20 @@ var AppView = GObject.registerClass(
       
       this._availWidth = availWidth;
       this._availHeight = availHeight;
+    }
+
+    _onMotionEvent(actor, event) {
+      // log("Mouseless: Motion event captured");
+      this._pointerIsMoving = true;
+      if (this._pointerMotionTimeout)
+      GLib.source_remove(this._pointerMotionTimeout);
+      // Clear flag after 100ms of inactivity.
+      this._pointerMotionTimeout = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
+      this._pointerIsMoving = false;
+      this._pointerMotionTimeout = null;
+      return GLib.SOURCE_REMOVE;
+      });
+      return Clutter.EVENT_PROPAGATE;
     }
   }
 );
